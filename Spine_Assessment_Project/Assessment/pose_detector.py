@@ -20,37 +20,7 @@ class BiomechanicalAssessment:
         self._neutral_offset = None
 
     def _get_calibrated_angle(self, raw_angle, calibration_frames=5):
-        """
-        Auto-calibrates a 'neutral' baseline from the first `calibration_frames`
-        successfully-detected raw angle readings of a session, then returns
-        the deviation from that baseline for every reading after. This lets
-        "standing still and straight" define zero for a given recording,
-        instead of relying on a fixed anatomical convention (e.g. an
-        idealized straight-down arm) that may not match how a specific
-        person is actually standing or how the camera is framed.
-
-        Uses the median of the calibration window, not the mean -- pose
-        models are typically least stable in their very first frames
-        (before any temporal smoothing settles), so a single unstable
-        reading could otherwise skew the whole baseline.
-
-        Returns abs(raw_angle - neutral_offset): the physical quantity here
-        (degrees away from the calibrated neutral pose) is always
-        non-negative regardless of whether the calibrated baseline sits a
-        few degrees off from "true" anatomical neutral. An earlier version
-        used max(0.0, raw - neutral) instead, which meant a baseline that
-        happened to calibrate slightly high would make every real reading
-        clip to exactly 0 -- looking identical to "nothing is being
-        computed" even though calibration had technically completed. If
-        angles are still stuck at 0 after this change, set
-        DEBUG_CALIBRATION = True and check the terminal for the actual
-        raw/neutral/calibrated numbers rather than guessing again.
-
-        Returns (calibrated_angle, is_calibrating). While is_calibrating is
-        True, calibrated_angle is 0.0 and the caller should treat the frame
-        as a "hold still" period rather than real movement data (skip rep
-        counting / history append for those frames).
-        """
+       
         if self._neutral_offset is None:
             self._calibration_buffer.append(raw_angle)
             if len(self._calibration_buffer) < calibration_frames:
@@ -83,28 +53,14 @@ class BiomechanicalAssessment:
         return angle
 
     def get_live_metrics_from_keypoints(self, keypoints, frame, side="left"):
-        """
-        Unified per-frame entry point, called by both app.py (Streamlit) and
-        _run_frame_loop() below (CLI analyze_video). `keypoints` is the
-        model-agnostic COCO-17 dict from any Estimators/ adapter. Draws the
-        assessment-specific overlay onto `frame` in place when detection
-        succeeds.
-        """
+        
         metrics = self._compute_live_metrics_from_kpts(keypoints, side=side)
         if metrics.get("success") and frame is not None:
             self._draw_overlay(frame, side, metrics)
         return metrics
 
     def get_session_summary(self):
-        """
-        Returns a summary dict for the just-completed recording (live app
-        session or analyze_video() run), built from the same _live_* state
-        both paths share. Used for left-vs-right symmetry comparisons in
-        app.py. Subclasses can override to add assessment-specific fields
-        (e.g. ShoulderPainfulArcAssessment adds painful_arc_triggered) --
-        always call super().get_session_summary() first and extend the dict.
-        Returns None if no frames were successfully analyzed.
-        """
+        
         if not self._live_captured_angles:
             return None
         return {
@@ -130,31 +86,10 @@ class BiomechanicalAssessment:
                                 stall_velocity_threshold=3.0, stall_min_duration=0.5,
                                 jitter_velocity_threshold=250.0):
         """
-        Shared motion-quality analysis for any (time_history, angle_history)
-        trace. Deliberately generic -- it only needs a plain time/angle
-        series, no assessment-specific logic -- so it's reusable both for
-        per-assessment hesitation detection and for cross-model temporal-
-        consistency comparison (Sara's comparison work), not shoulder- or
-        even assessment-specific.
-
-        - stall_velocity_threshold (deg/s): below this speed, motion counts
-          as "paused" for stall detection.
-        - stall_min_duration (s): a pause shorter than this is normal (e.g.
-          a brief hold between reps) and isn't flagged as hesitation.
-        - jitter_velocity_threshold (deg/s): above this speed, a single
-          frame-to-frame jump is treated as implausible for genuine human
-          movement and flagged as a likely tracking artifact rather than
-          real motion.
-
-        NOTE: none of these thresholds have been validated against real
-        recordings -- they're reasonable starting points, not calibrated
-        values (same caveat as the confidence-threshold attempt earlier).
-        Treat flagged results as candidates worth a human look, not ground
-        truth, until checked against footage with known-good/bad segments.
-
+       
         Returns:
             {
-                "velocities": [...],       # deg/s between consecutive samples
+                "velocities": [...],       # degrees between consecutive samples
                 "velocity_times": [...],   # midpoint time of each velocity sample
                 "stalls": [(start_t, end_t), ...],   # hesitation/stagnation periods
                 "jitter_events": [t1, t2, ...],       # timestamps of likely tracking artifacts
@@ -211,14 +146,7 @@ class BiomechanicalAssessment:
         pass
 
     def _run_frame_loop(self, video_path, side="left", estimator=None, window_title="Assessment"):
-        """
-        Shared CLI video-processing loop used by every subclass's
-        analyze_video(). Runs the given pose estimator (any Estimators/
-        adapter; defaults to MediaPipe if none is passed) frame-by-frame and
-        feeds keypoints through get_live_metrics_from_keypoints, so the CLI
-        report and the live Streamlit app always compute angles identically.
-        Returns True if at least one frame was successfully analyzed.
-        """
+       
         if not os.path.exists(video_path):
             print(f"[ERROR] Video path invalid: {video_path}")
             return False
@@ -298,17 +226,7 @@ class AnkleAssessment(BiomechanicalAssessment):
                     cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 255, 0), thickness, cv2.LINE_AA)
 
     def _compute_live_metrics_from_kpts(self, keypoints, side="left"):
-        """
-        Computes ankle metrics using only knee+ankle keypoints.
-
-        NOTE: COCO-17 -- the format shared by every adapter in Estimators/ --
-        has no foot/toe keypoint, so true dorsiflexion/plantarflexion (which
-        needs the foot's own direction) cannot be computed model-agnostically.
-        This uses shank (knee->ankle) tilt from vertical as a real,
-        comparable proxy (tibial inclination) instead of fabricating a fake
-        toe point. It is NOT the same clinical quantity as true ankle ROM --
-        document that distinction if this goes in the report.
-        """
+       
         is_left = side.lower() == "left"
         knee_idx = 13 if is_left else 14
         ankle_idx = 15 if is_left else 16
