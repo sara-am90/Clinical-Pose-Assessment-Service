@@ -250,8 +250,6 @@ st.subheader("Recording Review")
 
 if "pain_annotations" not in st.session_state:
     # side -> list of [start_seconds, end_seconds] ranges marked painful.
-    # Deliberately kept separate from the angle trace itself -- this is
-    # patient-reported data layered on top, not baked into the measurement.
     st.session_state["pain_annotations"] = {}
 
 _recorded = st.session_state["recorded_sides"]
